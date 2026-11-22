@@ -1,0 +1,72 @@
+
+name: Build Nabd Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get source code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install Capacitor
+        run: |
+          npm install --no-save --legacy-peer-deps @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7 @capacitor/local-notifications@7
+
+      - name: Build web application
+        run: npm run build
+
+      - name: Configure Android application
+        run: |
+          mv capacitor.config.ts capacitor.config.ts.disabled
+          cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "com.nabd.bp.tracker",
+            "appName": "نبض - ضغط الدم",
+            "webDir": "dist",
+            "server": {
+              "url": "https://service-68063.ai.studio",
+              "cleartext": false,
+              "androidScheme": "https"
+            },
+            "android": {
+              "allowMixedContent": false,
+              "backgroundColor": "#F8FAFC"
+            }
+          }
+          EOF
+
+      - name: Create Android project
+        run: npx cap add android
+
+      - name: Sync Android project
+        run: npx cap sync android
+
+      - name: Build APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nabd-Android-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk

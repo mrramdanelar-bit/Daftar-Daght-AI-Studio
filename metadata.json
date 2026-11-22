@@ -1,0 +1,6 @@
+{
+  "name": "نبض — متابعة ضغط الدم",
+  "description": "تطبيق طبي لمتابعة وتسجيل قياسات الضغط الدموي والنبض، مع استخراج القراءات تلقائياً من صور أجهزة القياس، والرسوم البيانية التحليلية، وتصدير التقارير الطبية بصيغة PDF.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

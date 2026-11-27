@@ -2,15 +2,15 @@ import { toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 
 /**
- * Exports a rendered DOM report element (with native browser Arabic RTL shaping
- * and inline SVG charts) into a high-resolution multi-page A4 PDF file.
+ * Export a rendered report to PDF.
+ * On Android/WebView, use the native share sheet when PDF file sharing is supported.
+ * Fall back to a normal browser download on platforms without file sharing.
  */
 export async function exportReportElementToPDF(
   element: HTMLElement,
   fileName: string
 ): Promise<void> {
-  // Ensure fonts are fully loaded before rasterizing
-  if (document.fonts && document.fonts.ready) {
+  if (document.fonts?.ready) {
     await document.fonts.ready;
   }
 
@@ -43,10 +43,8 @@ export async function exportReportElementToPDF(
 
   const imgWidthPx = img.naturalWidth;
   const imgHeightPx = img.naturalHeight;
-
-  // How many source pixels fit onto one A4 printable page height
   const pxPerMm = imgWidthPx / usableWidthMm;
-  const pageHeightPx = Math.floor(usableHeightMm * pxPerMm);
+  const pageHeightPx = Math.max(1, Math.floor(usableHeightMm * pxPerMm));
 
   if (imgHeightPx <= pageHeightPx) {
     const renderedHeightMm = imgHeightPx / pxPerMm;
@@ -61,7 +59,6 @@ export async function exportReportElementToPDF(
       'FAST'
     );
   } else {
-    // Cleanly slice into multiple A4 pages using an offscreen canvas
     const sliceCanvas = document.createElement('canvas');
     const ctx = sliceCanvas.getContext('2d');
     if (!ctx) {
@@ -112,5 +109,40 @@ export async function exportReportElementToPDF(
     }
   }
 
-  pdf.save(fileName);
+  const safeFileName = fileName.toLowerCase().endsWith('.pdf')
+    ? fileName
+    : `${fileName}.pdf`;
+  const blob = pdf.output('blob');
+  const pdfFile = new File([blob], safeFileName, { type: 'application/pdf' });
+
+  // Android Chrome/WebView can present the native share sheet, including Save to Files.
+  try {
+    const shareData = {
+      files: [pdfFile],
+      title: 'تقرير ضغط الدم',
+      text: 'ملف تقرير ضغط الدم بصيغة PDF',
+    };
+
+    if (navigator.share && navigator.canShare?.({ files: [pdfFile] })) {
+      await navigator.share(shareData);
+      return;
+    }
+  } catch (error) {
+    // A user cancellation should not trigger a second download attempt.
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      return;
+    }
+    throw new Error('تعذرت مشاركة ملف PDF. حاول مرة أخرى أو استخدم متصفح Chrome.');
+  }
+
+  // Standard browser fallback.
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = safeFileName;
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 120000);
 }

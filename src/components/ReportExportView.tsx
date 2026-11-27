@@ -227,8 +227,8 @@ export default function ReportExportView({
   const avgCategory =
     stats.count > 0 ? classifyBP(stats.avgSys, stats.avgDia) : null;
 
-  const handleDownloadPdf = async () => {
-    if (!reportRef.current) return;
+  const handlePdfAction = async (action: 'download' | 'print') => {
+    if (!reportRef.current || isExportingPdf) return;
     setExportError('');
     setExportMessage('');
     setIsExportingPdf(true);
@@ -236,23 +236,27 @@ export default function ReportExportView({
       const stamp = new Date().toISOString().slice(0, 10);
       await exportReportElementToPDF(
         reportRef.current,
-        `تقرير-ضغط-الدم-${stamp}.pdf`
+        `تقرير-ضغط-الدم-${stamp}.pdf`,
+        action
       );
-      setExportMessage('تم إنشاء وتحميل ملف PDF الطبي بنجاح.');
+      setExportMessage(
+        action === 'print'
+          ? 'تم تجهيز التقرير. اختر الطباعة أو حفظ PDF من نافذة المشاركة.'
+          : 'تم تجهيز ملف PDF. اختر مكان الحفظ أو التطبيق المناسب من نافذة المشاركة.'
+      );
     } catch (err: unknown) {
       setExportError(
         err instanceof Error
-          ? `${err.message} — يمكنك أيضاً استخدام زر "طباعة / حفظ PDF".`
-          : 'تعذر تحميل ملف PDF مباشرة، يرجى استخدام زر "طباعة / حفظ PDF".'
+          ? `تعذر تجهيز PDF: ${err.message}`
+          : 'تعذر تجهيز ملف PDF. حاول مرة أخرى.'
       );
     } finally {
       setIsExportingPdf(false);
     }
   };
 
-  const handlePrint = () => {
-    window.print();
-  };
+  const handleDownloadPdf = () => handlePdfAction('download');
+  const handlePrint = () => handlePdfAction('print');
 
   const handleExportJson = () => {
     const payload = {
@@ -384,11 +388,11 @@ export default function ReportExportView({
             <button
               type="button"
               onClick={handlePrint}
-              disabled={filteredReadings.length === 0}
+              disabled={isExportingPdf || filteredReadings.length === 0}
               className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors whitespace-nowrap"
             >
               <Printer className="w-4 h-4 text-slate-500" />
-              <span>طباعة / حفظ PDF</span>
+              <span>{isExportingPdf ? 'جارٍ تجهيز PDF...' : 'طباعة / حفظ PDF'}</span>
             </button>
 
             <button

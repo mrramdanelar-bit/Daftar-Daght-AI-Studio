@@ -40,11 +40,6 @@ jobs:
             "appId": "com.nabd.bp.tracker",
             "appName": "نبض - ضغط الدم",
             "webDir": "dist",
-            "server": {
-              "url": "https://service-68063.ai.studio",
-              "cleartext": false,
-              "androidScheme": "https"
-            },
             "android": {
               "allowMixedContent": false,
               "backgroundColor": "#F8FAFC"

@@ -15,12 +15,12 @@ function bytesToBase64(bytes: Uint8Array): string {
 
 export async function exportReportElementToPDF(
   element: HTMLElement,
-  fileName: string
+  fileName: string,
+  action: 'download' | 'print' = 'download'
 ): Promise<void> {
   if (document.fonts?.ready) await document.fonts.ready;
 
   const dataUrl = await toPng(element, {
-    quality: 1,
     pixelRatio: 2,
     backgroundColor: '#ffffff',
     cacheBust: true,
@@ -77,10 +77,9 @@ export async function exportReportElementToPDF(
 
   if (Capacitor.isNativePlatform()) {
     const pdfBytes = new Uint8Array(pdf.output('arraybuffer'));
-    const base64Data = bytesToBase64(pdfBytes);
     const saved = await Filesystem.writeFile({
       path: safeFileName,
-      data: base64Data,
+      data: bytesToBase64(pdfBytes),
       directory: Directory.Cache,
       recursive: true,
     });
@@ -88,11 +87,14 @@ export async function exportReportElementToPDF(
       directory: Directory.Cache,
       path: safeFileName,
     });
+
     await Share.share({
-      title: 'تقرير ضغط الدم',
-      text: 'ملف تقرير ضغط الدم بصيغة PDF',
+      title: action === 'print' ? 'طباعة تقرير ضغط الدم' : 'تقرير ضغط الدم بصيغة PDF',
+      text: action === 'print'
+        ? 'اختر تطبيق الطباعة لطباعة التقرير، أو اختر حفظه بصيغة PDF.'
+        : 'اختر مكاناً لحفظ تقرير ضغط الدم أو تطبيقاً لمشاركته.',
       url: fileUri.uri || saved.uri,
-      dialogTitle: 'حفظ أو مشاركة تقرير PDF',
+      dialogTitle: action === 'print' ? 'طباعة أو حفظ التقرير' : 'حفظ أو مشاركة تقرير PDF',
     });
     return;
   }
@@ -100,16 +102,32 @@ export async function exportReportElementToPDF(
   const blob = pdf.output('blob');
   const pdfFile = new File([blob], safeFileName, { type: 'application/pdf' });
   if (navigator.share && navigator.canShare?.({ files: [pdfFile] })) {
-    await navigator.share({ files: [pdfFile], title: 'تقرير ضغط الدم', text: 'ملف تقرير ضغط الدم بصيغة PDF' });
+    await navigator.share({
+      files: [pdfFile],
+      title: action === 'print' ? 'طباعة تقرير ضغط الدم' : 'تقرير ضغط الدم',
+      text: 'ملف تقرير ضغط الدم بصيغة PDF',
+    });
     return;
   }
 
   const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = safeFileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
+  if (action === 'print') {
+    const opened = window.open(url, '_blank');
+    if (!opened) {
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = safeFileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }
+  } else {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = safeFileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
   window.setTimeout(() => URL.revokeObjectURL(url), 120000);
 }

@@ -9,7 +9,6 @@ import {
 } from 'lucide-react';
 import type {
   BloodPressureReading,
-  DateRangeKey,
   PatientProfile,
 } from '../types';
 import {
@@ -18,7 +17,6 @@ import {
   classifyBP,
   CONTEXT_LABELS,
   exportReadingsToCSV,
-  filterReadingsByRange,
   formatDateTimeAr,
   formatShortDateAr,
 } from '../utils/bpLogic';
@@ -30,13 +28,6 @@ interface ReportExportViewProps {
   onUpdateProfile: (profile: PatientProfile) => void;
   onImportReadings: (imported: BloodPressureReading[]) => void;
 }
-
-const PERIOD_LABELS: Record<DateRangeKey, string> = {
-  '7d': 'آخر 7 أيام',
-  '30d': 'آخر 30 يوماً',
-  '90d': 'آخر 90 يوماً',
-  all: 'كامل السجل المسجّل',
-};
 
 function ReportSvgTrendChart({
   readings,
@@ -210,15 +201,11 @@ export default function ReportExportView({
   const reportRef = useRef<HTMLDivElement | null>(null);
   const jsonInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [reportRange, setReportRange] = useState<DateRangeKey>('all');
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [exportMessage, setExportMessage] = useState('');
   const [exportError, setExportError] = useState('');
 
-  const filteredReadings = useMemo(
-    () => filterReadingsByRange(readings, reportRange),
-    [readings, reportRange]
-  );
+  const filteredReadings = readings;
 
   const handlePdfAction = async (action: 'download' | 'print') => {
     if (!reportRef.current || isExportingPdf) return;
@@ -449,26 +436,6 @@ export default function ReportExportView({
             />
           </div>
 
-          <div>
-            <label
-              htmlFor="report-range"
-              className="block text-xs font-medium text-slate-600 mb-1"
-            >
-              فترة التقرير
-            </label>
-            <select
-              id="report-range"
-              value={reportRange}
-              onChange={(e) => setReportRange(e.target.value as DateRangeKey)}
-              className="w-full px-3 py-2 text-sm text-slate-900 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-700/20 focus:border-teal-700"
-            >
-              <option value="7d">آخر 7 أيام</option>
-              <option value="30d">آخر 30 يوماً</option>
-              <option value="90d">آخر 90 يوماً</option>
-              <option value="all">كامل السجل</option>
-            </select>
-          </div>
-
           <div className="sm:col-span-2 lg:col-span-2">
             <label
               htmlFor="patient-meds"
@@ -595,7 +562,7 @@ export default function ReportExportView({
                 تقرير قياسات الضغط الدموي والنبض
               </h1>
               <div className="text-xs text-slate-500 mt-1.5 flex flex-wrap items-center gap-2">
-                <span>الفترة: {PERIOD_LABELS[reportRange]}</span>
+                <span>الفترة: كامل السجل المسجّل</span>
                 <span aria-hidden="true">·</span>
                 <span className="font-mono-tabular">
                   تاريخ الإصدار: {formatDateTimeAr(new Date().toISOString())}

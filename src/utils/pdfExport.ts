@@ -1,18 +1,23 @@
 import { toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
+import { Capacitor } from '@capacitor/core';
+import { Directory, Filesystem } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 
-/**
- * Export a rendered report to PDF.
- * On Android/WebView, use the native share sheet when PDF file sharing is supported.
- * Fall back to a normal browser download on platforms without file sharing.
- */
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
 export async function exportReportElementToPDF(
   element: HTMLElement,
   fileName: string
 ): Promise<void> {
-  if (document.fonts?.ready) {
-    await document.fonts.ready;
-  }
+  if (document.fonts?.ready) await document.fonts.ready;
 
   const dataUrl = await toPng(element, {
     quality: 1,
@@ -40,107 +45,69 @@ export async function exportReportElementToPDF(
   const marginMm = 8;
   const usableWidthMm = pageWidthMm - marginMm * 2;
   const usableHeightMm = pageHeightMm - marginMm * 2;
-
   const imgWidthPx = img.naturalWidth;
   const imgHeightPx = img.naturalHeight;
   const pxPerMm = imgWidthPx / usableWidthMm;
   const pageHeightPx = Math.max(1, Math.floor(usableHeightMm * pxPerMm));
 
   if (imgHeightPx <= pageHeightPx) {
-    const renderedHeightMm = imgHeightPx / pxPerMm;
-    pdf.addImage(
-      dataUrl,
-      'PNG',
-      marginMm,
-      marginMm,
-      usableWidthMm,
-      renderedHeightMm,
-      undefined,
-      'FAST'
-    );
+    pdf.addImage(dataUrl, 'PNG', marginMm, marginMm, usableWidthMm, imgHeightPx / pxPerMm, undefined, 'FAST');
   } else {
-    const sliceCanvas = document.createElement('canvas');
-    const ctx = sliceCanvas.getContext('2d');
-    if (!ctx) {
-      throw new Error('تعذر تهيئة الرسم لتقسيم صفحات PDF');
-    }
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('تعذر تهيئة الرسم لتقسيم صفحات PDF');
 
     let offsetY = 0;
     let pageIndex = 0;
-
     while (offsetY < imgHeightPx) {
       const sliceHeight = Math.min(pageHeightPx, imgHeightPx - offsetY);
-      sliceCanvas.width = imgWidthPx;
-      sliceCanvas.height = sliceHeight;
-
+      canvas.width = imgWidthPx;
+      canvas.height = sliceHeight;
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, imgWidthPx, sliceHeight);
-      ctx.drawImage(
-        img,
-        0,
-        offsetY,
-        imgWidthPx,
-        sliceHeight,
-        0,
-        0,
-        imgWidthPx,
-        sliceHeight
-      );
-
-      const sliceDataUrl = sliceCanvas.toDataURL('image/png');
-      const sliceHeightMm = sliceHeight / pxPerMm;
-
-      if (pageIndex > 0) {
-        pdf.addPage();
-      }
-      pdf.addImage(
-        sliceDataUrl,
-        'PNG',
-        marginMm,
-        marginMm,
-        usableWidthMm,
-        sliceHeightMm,
-        undefined,
-        'FAST'
-      );
-
+      ctx.drawImage(img, 0, offsetY, imgWidthPx, sliceHeight, 0, 0, imgWidthPx, sliceHeight);
+      if (pageIndex > 0) pdf.addPage();
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', marginMm, marginMm, usableWidthMm, sliceHeight / pxPerMm, undefined, 'FAST');
       offsetY += sliceHeight;
       pageIndex += 1;
     }
   }
 
-  const safeFileName = fileName.toLowerCase().endsWith('.pdf')
-    ? fileName
-    : `${fileName}.pdf`;
-  const blob = pdf.output('blob');
-  const pdfFile = new File([blob], safeFileName, { type: 'application/pdf' });
+  const safeFileName = fileName.toLowerCase().endsWith('.pdf') ? fileName : `${fileName}.pdf`;
 
-  // Android Chrome/WebView can present the native share sheet, including Save to Files.
-  try {
-    const shareData = {
-      files: [pdfFile],
+  if (Capacitor.isNativePlatform()) {
+    const pdfBytes = new Uint8Array(pdf.output('arraybuffer'));
+    const base64Data = bytesToBase64(pdfBytes);
+    const saved = await Filesystem.writeFile({
+      path: safeFileName,
+      data: base64Data,
+      directory: Directory.Cache,
+      recursive: true,
+    });
+    const fileUri = await Filesystem.getUri({
+      directory: Directory.Cache,
+      path: safeFileName,
+    });
+    await Share.share({
       title: 'تقرير ضغط الدم',
       text: 'ملف تقرير ضغط الدم بصيغة PDF',
-    };
-
-    if (navigator.share && navigator.canShare?.({ files: [pdfFile] })) {
-      await navigator.share(shareData);
-      return;
-    }
-  } catch (error) {
-    // A user cancellation should not trigger a second download attempt.
-    if (error instanceof DOMException && error.name === 'AbortError') {
-      return;
-    }
-    throw new Error('تعذرت مشاركة ملف PDF. حاول مرة أخرى أو استخدم متصفح Chrome.');
+      url: fileUri.uri || saved.uri,
+      dialogTitle: 'حفظ أو مشاركة تقرير PDF',
+    });
+    return;
   }
 
-  // Standard browser fallback.
+  const blob = pdf.output('blob');
+  const pdfFile = new File([blob], safeFileName, { type: 'application/pdf' });
+  if (navigator.share && navigator.canShare?.({ files: [pdfFile] })) {
+    await navigator.share({ files: [pdfFile], title: 'تقرير ضغط الدم', text: 'ملف تقرير ضغط الدم بصيغة PDF' });
+    return;
+  }
+
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
   link.download = safeFileName;
-  link.style.display = 'none';
   document.body.appendChild(link);
   link.click();
   link.remove();

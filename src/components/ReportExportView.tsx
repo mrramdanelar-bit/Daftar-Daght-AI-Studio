@@ -9,16 +9,13 @@ import {
 } from 'lucide-react';
 import type {
   BloodPressureReading,
-  BPCategoryKey,
   DateRangeKey,
   PatientProfile,
 } from '../types';
 import {
   ARM_LABELS,
-  BP_CATEGORIES,
   calcMAP,
   classifyBP,
-  computeStats,
   CONTEXT_LABELS,
   exportReadingsToCSV,
   filterReadingsByRange,
@@ -213,7 +210,7 @@ export default function ReportExportView({
   const reportRef = useRef<HTMLDivElement | null>(null);
   const jsonInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [reportRange, setReportRange] = useState<DateRangeKey>('30d');
+  const [reportRange, setReportRange] = useState<DateRangeKey>('all');
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [exportMessage, setExportMessage] = useState('');
   const [exportError, setExportError] = useState('');
@@ -222,10 +219,6 @@ export default function ReportExportView({
     () => filterReadingsByRange(readings, reportRange),
     [readings, reportRange]
   );
-
-  const stats = useMemo(() => computeStats(filteredReadings), [filteredReadings]);
-  const avgCategory =
-    stats.count > 0 ? classifyBP(stats.avgSys, stats.avgDia) : null;
 
   const handlePdfAction = async (action: 'download' | 'print') => {
     if (!reportRef.current || isExportingPdf) return;
@@ -343,15 +336,6 @@ export default function ReportExportView({
     };
     reader.readAsText(file);
   };
-
-  const categoryOrder: BPCategoryKey[] = [
-    'low',
-    'normal',
-    'elevated',
-    'stage1',
-    'stage2',
-    'crisis',
-  ];
 
   return (
     <div className="space-y-6">
@@ -659,182 +643,67 @@ export default function ReportExportView({
             </section>
           )}
 
-          {/* Aggregate Clinical Summary */}
-          {stats.count === 0 ? (
+          {/* Complete readings first; charts are deliberately placed last */}
+          {filteredReadings.length === 0 ? (
             <div className="py-10 text-center text-sm text-slate-500">
               لا توجد قياسات ضمن الفترة المحددة لتضمينها في التقرير.
             </div>
           ) : (
             <>
-              <section className="avoid-break space-y-3">
-                <h2 className="text-sm font-semibold text-slate-900">
-                  أولاً: الملخص الإحصائي العام
-                </h2>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="border border-slate-200 rounded-lg p-3.5">
-                    <div className="text-[11px] text-slate-500">
-                      متوسط الضغط العام
-                    </div>
-                    <div className="font-mono-tabular text-xl font-bold text-slate-900 mt-1">
-                      {stats.avgSys}/{stats.avgDia}
-                    </div>
-                    <div
-                      className={`text-[11px] font-semibold mt-1 ${
-                        avgCategory?.textColor ?? 'text-slate-600'
-                      }`}
-                    >
-                      {avgCategory?.label}
-                    </div>
-                  </div>
-
-                  <div className="border border-slate-200 rounded-lg p-3.5">
-                    <div className="text-[11px] text-slate-500">
-                      متوسط النبض و MAP
-                    </div>
-                    <div className="font-mono-tabular text-xl font-bold text-slate-900 mt-1">
-                      {stats.avgPulse}
-                      <span className="text-xs font-normal text-slate-400 mr-1">
-                        ن/د
-                      </span>
-                    </div>
-                    <div className="font-mono-tabular text-[11px] text-slate-500 mt-1">
-                      MAP {stats.avgMAP} · ضغط النبض {stats.avgPulsePressure}
-                    </div>
-                  </div>
-
-                  <div className="border border-slate-200 rounded-lg p-3.5">
-                    <div className="text-[11px] text-slate-500">
-                      متوسط الصباح / المساء
-                    </div>
-                    <div className="font-mono-tabular text-sm font-semibold text-slate-900 mt-1.5">
-                      صباحاً:{' '}
-                      {stats.morningAvg.count
-                        ? `${stats.morningAvg.sys}/${stats.morningAvg.dia}`
-                        : '—'}
-                    </div>
-                    <div className="font-mono-tabular text-sm font-semibold text-slate-700 mt-0.5">
-                      مساءً:{' '}
-                      {stats.eveningAvg.count
-                        ? `${stats.eveningAvg.sys}/${stats.eveningAvg.dia}`
-                        : '—'}
-                    </div>
-                  </div>
-
-                  <div className="border border-slate-200 rounded-lg p-3.5">
-                    <div className="text-[11px] text-slate-500">
-                      النطاق وإجمالي القياسات
-                    </div>
-                    <div className="font-mono-tabular text-sm font-semibold text-slate-900 mt-1.5">
-                      {stats.count} قياس ({stats.normalRatio}% طبيعي)
-                    </div>
-                    <div className="font-mono-tabular text-[11px] text-slate-500 mt-1">
-                      SYS {stats.minSys}–{stats.maxSys} · DIA {stats.minDia}–
-                      {stats.maxDia}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Category Distribution Strip */}
-                <div className="border border-slate-200 rounded-lg p-3.5 space-y-2.5">
-                  <div className="text-xs font-medium text-slate-700">
-                    توزيع التصنيفات الطبية (AHA/ACC)
-                  </div>
-                  <div className="w-full h-2.5 rounded-full overflow-hidden flex bg-slate-100">
-                    {categoryOrder.map((key) => {
-                      const count = stats.categoryCounts[key];
-                      if (!count) return null;
-                      const pct = (count / stats.count) * 100;
-                      return (
-                        <div
-                          key={key}
-                          style={{
-                            width: `${pct}%`,
-                            backgroundColor: BP_CATEGORIES[key].chartColor,
-                          }}
-                          title={`${BP_CATEGORIES[key].label}: ${count}`}
-                        />
-                      );
-                    })}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-600">
-                    {categoryOrder.map((key) => {
-                      const count = stats.categoryCounts[key];
-                      if (!count) return null;
-                      const pct = Math.round((count / stats.count) * 100);
-                      return (
-                        <span key={key} className="font-mono-tabular">
-                          <span
-                            className={`font-sans font-semibold ${BP_CATEGORIES[key].textColor}`}
-                          >
-                            {BP_CATEGORIES[key].shortLabel}
-                          </span>
-                          : {count} ({pct}%)
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-              </section>
-
-              {/* Inline SVG Trend Chart */}
-              <section className="avoid-break space-y-2.5">
-                <h2 className="text-sm font-semibold text-slate-900">
-                  ثانياً: المنحنى البياني لتطور القراءات
-                </h2>
-                <ReportSvgTrendChart readings={filteredReadings} />
-              </section>
-
-              {/* Complete Chronological Readings Table */}
               <section className="space-y-2.5">
-                <h2 className="text-sm font-semibold text-slate-900">
-                  ثالثاً: السجل التفصيلي للقياسات ({filteredReadings.length})
+                <h2 className="text-sm font-semibold text-slate-900 border-r-4 border-teal-700 pr-2">
+                  السجل الكامل للقياسات ({filteredReadings.length} قياس)
                 </h2>
-                <table className="w-full text-right border-collapse border border-slate-200 text-xs">
+                <table className="w-full text-right border-collapse border border-slate-200 text-[10px] leading-5">
                   <thead>
-                    <tr className="bg-slate-50 text-slate-600 border-b border-slate-200">
-                      <th className="py-2 px-3 font-medium">التاريخ والوقت</th>
-                      <th className="py-2 px-2.5 font-medium">الضغط</th>
-                      <th className="py-2 px-2.5 font-medium">النبض</th>
-                      <th className="py-2 px-2.5 font-medium">MAP</th>
-                      <th className="py-2 px-2.5 font-medium">التصنيف</th>
-                      <th className="py-2 px-2.5 font-medium">الذراع والظرف</th>
-                      <th className="py-2 px-3 font-medium">ملاحظات</th>
+                    <tr className="bg-slate-100 text-slate-700 border-b-2 border-slate-300">
+                      <th className="py-2 px-2 font-semibold">التاريخ والوقت</th>
+                      <th className="py-2 px-2 font-semibold">الضغط (SYS/DIA)</th>
+                      <th className="py-2 px-2 font-semibold">النبض</th>
+                      <th className="py-2 px-2 font-semibold">MAP</th>
+                      <th className="py-2 px-2 font-semibold">التصنيف</th>
+                      <th className="py-2 px-2 font-semibold">الذراع / الظرف</th>
+                      <th className="py-2 px-2 font-semibold">ملاحظات</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
-                    {filteredReadings.map((r) => {
-                      const cat = classifyBP(r.systolic, r.diastolic);
-                      return (
-                        <tr key={r.id}>
-                          <td className="py-2 px-3 font-mono-tabular text-slate-700 whitespace-nowrap">
-                            {formatDateTimeAr(r.measuredAt)}
-                          </td>
-                          <td className="py-2 px-2.5 font-mono-tabular font-semibold text-slate-900 whitespace-nowrap">
-                            {r.systolic}/{r.diastolic}
-                          </td>
-                          <td className="py-2 px-2.5 font-mono-tabular text-slate-700 whitespace-nowrap">
-                            {r.pulse}
-                            {r.irregularHeartbeat ? ' (IHB)' : ''}
-                          </td>
-                          <td className="py-2 px-2.5 font-mono-tabular text-slate-600 whitespace-nowrap">
-                            {calcMAP(r.systolic, r.diastolic)}
-                          </td>
-                          <td className="py-2 px-2.5 whitespace-nowrap">
-                            <span className={`font-semibold ${cat.textColor}`}>
-                              {cat.shortLabel}
-                            </span>
-                          </td>
-                          <td className="py-2 px-2.5 text-slate-600">
-                            {ARM_LABELS[r.arm]} · {CONTEXT_LABELS[r.context]}
-                          </td>
-                          <td className="py-2 px-3 text-slate-500">
-                            {r.notes || '—'}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {[...filteredReadings]
+                      .sort((a, b) => new Date(b.measuredAt).getTime() - new Date(a.measuredAt).getTime())
+                      .map((r, index) => {
+                        const cat = classifyBP(r.systolic, r.diastolic);
+                        return (
+                          <tr key={r.id} className={index % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                            <td className="py-1.5 px-2 font-mono-tabular text-slate-700 whitespace-nowrap">
+                              {formatDateTimeAr(r.measuredAt)}
+                            </td>
+                            <td className="py-1.5 px-2 font-mono-tabular font-bold text-slate-900 whitespace-nowrap">
+                              {r.systolic}/{r.diastolic}
+                            </td>
+                            <td className="py-1.5 px-2 font-mono-tabular text-slate-700 whitespace-nowrap">
+                              {r.pulse}{r.irregularHeartbeat ? ' (IHB)' : ''}
+                            </td>
+                            <td className="py-1.5 px-2 font-mono-tabular text-slate-700 whitespace-nowrap">
+                              {calcMAP(r.systolic, r.diastolic)}
+                            </td>
+                            <td className="py-1.5 px-2 whitespace-nowrap">
+                              <span className={`font-semibold ${cat.textColor}`}>{cat.shortLabel}</span>
+                            </td>
+                            <td className="py-1.5 px-2 text-slate-600 whitespace-nowrap">
+                              {ARM_LABELS[r.arm]} · {CONTEXT_LABELS[r.context]}
+                            </td>
+                            <td className="py-1.5 px-2 text-slate-600">{r.notes || '—'}</td>
+                          </tr>
+                        );
+                      })}
                   </tbody>
                 </table>
+              </section>
+
+              <section className="avoid-break space-y-2.5 pt-3">
+                <h2 className="text-sm font-semibold text-slate-900 border-r-4 border-teal-700 pr-2">
+                  المنحنى البياني لتطور ضغط الدم
+                </h2>
+                <ReportSvgTrendChart readings={filteredReadings} />
               </section>
             </>
           )}
